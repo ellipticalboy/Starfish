@@ -341,6 +341,158 @@ class PHOENIXGridInterface(RawGridInterface):
 
         return (f[self.ind], header)
 
+class PHOENIXR10000GridInterface(RawGridInterface):
+    '''
+    An Interface to the PHOENIX/Husser synthetic library at R=10000.
+
+    :param norm: normalize the spectrum to solar luminosity?
+    :type norm: bool
+
+    '''
+    def __init__(self, air=True, norm=True, wl_range=[3000, 25000],
+        base="libraries/raw/PHOENIXR10000/"):
+
+        super().__init__(name="PHOENIX",
+            points={"temp":
+          np.array([2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200,
+          3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000, 4100, 4200, 4300, 4400,
+          4500, 4600, 4700, 4800, 4900, 5000, 5100, 5200, 5300, 5400, 5500, 5600,
+          5700, 5800, 5900, 6000, 6100, 6200, 6300, 6400, 6500, 6600, 6700, 6800,
+          6900, 7000, 7200, 7400, 7600, 7800, 8000, 8200, 8400, 8600, 8800, 9000,
+          9200, 9400, 9600, 9800, 10000, 10200, 10400, 10600, 10800, 11000, 11200,
+          11400, 11600, 11800, 12000]),
+            "logg":np.arange(0.0, 6.1, 0.5),
+            "Z":np.arange(-2., 1.1, 0.5),
+            "alpha":np.array([-0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2])},
+            air=air, wl_range=wl_range, base=base)
+
+        self.norm = norm #Normalize to 1 solar luminosity?
+        self.Z_dict = {-2:"-2.0", -1.5:"-1.5", -1:'-1.0', -0.5:'-0.5',
+            0.0: '-0.0', 0.5: '+0.5', 1: '+1.0'}
+        self.alpha_dict = {-0.2:".Alpha=-0.20",
+            0.0: "", 0.2:".Alpha=+0.20", 0.4:".Alpha=+0.40",
+            0.6:".Alpha=+0.60", 0.8:".Alpha=+0.80", 1.0:".Alpha=+1.00",
+            1.2:".Alpha=+1.20"}
+
+        w_full=np.exp(8.006368+np.arange(0,212027)*1e-5)
+        self.wl_full = w_full
+
+        self.ind = (self.wl_full >= self.wl_range[0]) & (self.wl_full <= self.wl_range[1])
+        self.wl = self.wl_full[self.ind]
+        self.rname = self.base + "Z{Z:}{alpha:}/lte{temp:0>5.0f}-{logg:.2f}{Z:}{alpha:}" \
+                     ".PHOENIX-ACES-AGSS-COND-2011-HiRes.fits"
+
+    def load_file(self, parameters):
+        '''
+        Load a file from disk and return it as a spectrum object.
+
+        :param parameters: stellar parameters
+        :type parameters: dict
+
+        :raises C.GridError: if the file cannot be found on disk.
+
+        :returns: :obj:`model.Base1DSpectrum`
+        '''
+        super().load_file(parameters) #Check to make sure that the keys are allowed and that the values are in the grid
+
+        str_parameters = parameters.copy()
+        #Rewrite Z
+        Z = parameters["Z"]
+        str_parameters["Z"] = self.Z_dict[Z]
+
+        #Rewrite alpha, allow alpha to be missing from parameters and set to 0
+        try:
+            alpha = parameters["alpha"]
+        except KeyError:
+            alpha = 0.0
+            parameters["alpha"] = alpha
+        str_parameters["alpha"] = self.alpha_dict[alpha]
+
+        fname = self.rname.format(**str_parameters)
+
+        #Still need to check that file is in the grid, otherwise raise a C.GridError
+        #Read all metadata in from the FITS header, and append to spectrum
+        try:
+            flux_file = fits.open(fname)
+            f = flux_file[0].data
+            hdr = flux_file[0].header
+            flux_file.close()
+        except OSError:
+            raise C.GridError("{} is not on disk.".format(fname))
+
+        #If we want to normalize the spectra, we must do it now since later we won't have the full EM range
+        if self.norm:
+            f *= 1e-8 #convert from erg/cm^2/s/cm to erg/cm^2/s/A
+            F_bol = trapz(f, self.wl_full)
+            f = f * (C.F_sun / F_bol) #bolometric luminosity is always 1 L_sun
+
+        #Add temp, logg, Z, alpha, norm to the metadata
+        header = parameters
+        header["norm"] = self.norm
+        #Keep only the relevant PHOENIX keywords, which start with PHX
+        for key, value in hdr.items():
+            if key[:3] == "PHX":
+                header[key] = value
+
+        return Base1DSpectrum(self.wl, f[self.ind], metadata=header, air=self.air)
+
+
+    def load_flux(self, parameters, norm=True):
+        '''
+       Load just the flux and header information.
+
+       :param parameters: stellar parameters
+       :type parameters: dict
+
+       :raises C.GridError: if the file cannot be found on disk.
+
+       :returns: tuple (flux_array, header_dict)
+
+       '''
+        super().load_file(parameters) #Check to make sure that the keys are allowed and that the values are in the grid
+
+        str_parameters = parameters.copy()
+        #Rewrite Z
+        Z = parameters["Z"]
+        str_parameters["Z"] = self.Z_dict[Z]
+
+        #Rewrite alpha, allow alpha to be missing from parameters and set to 0
+        try:
+            alpha = parameters["alpha"]
+        except KeyError:
+            alpha = 0.0
+            parameters["alpha"] = alpha
+        str_parameters["alpha"] = self.alpha_dict[alpha]
+
+        fname = self.rname.format(**str_parameters)
+
+        #Still need to check that file is in the grid, otherwise raise a C.GridError
+        #Read all metadata in from the FITS header, and append to spectrum
+        try:
+            flux_file = fits.open(fname)
+            f = flux_file[0].data
+            hdr = flux_file[0].header
+            flux_file.close()
+        except OSError:
+            raise C.GridError("{} is not on disk.".format(fname))
+
+        #If we want to normalize the spectra, we must do it now since later we won't have the full EM range
+        if self.norm:
+            f *= 1e-8 #convert from erg/cm^2/s/cm to erg/cm^2/s/A
+            F_bol = trapz(f, self.wl_full)
+            f = f * (C.F_sun / F_bol) #bolometric luminosity is always 1 L_sun
+
+        #Add temp, logg, Z, alpha, norm to the metadata
+        header = parameters
+        header["norm"] = self.norm
+        header["air"] = self.air
+        #Keep only the relevant PHOENIX keywords, which start with PHX
+        for key, value in hdr.items():
+            if key[:3] == "PHX":
+                header[key] = value
+
+        return (f[self.ind], header)
+
 class KuruczGridInterface(RawGridInterface):
     '''Kurucz grid interface.
 
@@ -1116,6 +1268,15 @@ class SPEX_SXD(Instrument):
     def __init__(self, name="SPEX", FWHM=150., wl_range=(7500, 26000)):
         super().__init__(name=name, FWHM=FWHM, wl_range=wl_range)
 
+class XSHOOTER_UVB(Instrument):
+    '''X-shooter UVB arm'''
+    def __init__(self, name="XSHOOTER", FWHM=18.1, wl_range=(3000, 5400)):
+        super().__init__(name=name, FWHM=FWHM, wl_range=wl_range)
+        
+class XSHOOTER_VIS(Instrument):
+    '''X-shooter VIS arm'''
+    def __init__(self, name="XSHOOTER", FWHM=11.6, wl_range=(5650, 10200)):
+        super().__init__(name=name, FWHM=FWHM, wl_range=wl_range)
 
 def vacuum_to_air(wl):
     '''
