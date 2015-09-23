@@ -1270,12 +1270,12 @@ class SPEX_SXD(Instrument):
 
 class XSHOOTER_UVB(Instrument):
     '''X-shooter UVB arm'''
-    def __init__(self, name="XSHOOTER", FWHM=18.1, wl_range=(3000, 5400)):
+    def __init__(self, name="XSHOOTER", FWHM=29.5, wl_range=(3000, 5400)):
         super().__init__(name=name, FWHM=FWHM, wl_range=wl_range)
         
 class XSHOOTER_VIS(Instrument):
     '''X-shooter VIS arm'''
-    def __init__(self, name="XSHOOTER", FWHM=11.6, wl_range=(5650, 10200)):
+    def __init__(self, name="XSHOOTER", FWHM=26.0, wl_range=(5650, 10200)):
         super().__init__(name=name, FWHM=FWHM, wl_range=wl_range)
 
 def vacuum_to_air(wl):
